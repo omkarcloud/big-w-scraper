@@ -59,33 +59,36 @@ python run.py
 
 3️⃣ Get your first data:
 ```bash
-curl "http://localhost:8000/products/details?product=245249"
+curl "http://localhost:8000/products/search?query=nintendo+switch"
 ```
 
 ```json
 {
-  "id": "245249",
-  "name": "Apple AirPods 4",
-  "link": "https://www.bigw.com.au/product/apple-airpods-4/p/245249",
-  "brand": "Apple",
-  "rating": 4.5,
-  "sold_by": "BIG W",
-  "identifiers": { "ean": "195949688577", "manufacturer_id": null, "external_base_id": null },
-  "pricing": {
-    "amount": 219.0,
-    "currency": "AUD",
-    "was_amount": null,
-    "afterpay_instalment": 54.75,
-    "is_zip_pay_eligible": true,
-    "state": "NSW"
-  },
-  "reviews": { "count": 62, "average_rating": 4.7581, "recommended_count": 50 }
+  "count": 10904,
+  "per_page": 48,
+  "current_page": 1,
+  "total_pages": 42,
+  "next": "http://localhost:8000/products/search?query=nintendo+switch&page=2",
+  "previous": null,
+  "query": "nintendo switch",
+  "results": [
+    {
+      "id": "6083660",
+      "name": "Nintendo Switch Sports Resort - Nintendo Switch 2",
+      "link": "https://www.bigw.com.au/product/nintendo-switch-sports-resort-nintendo-switch-2/p/6083660",
+      "brand": "Nintendo",
+      "image": { "medium": "https://www.bigw.com.au/medias/sys_master/images/images/hff/hc1/155540653113374.jpg" },
+      "pricing": { "amount": 79.0, "currency": "AUD", "was_amount": null, "label": "NEW", "state": "NAT" },
+      "is_in_stock": true,
+      "sold_by": "BIG W"
+    }
+  ]
 }
 ```
 
 All 11 endpoints are now live at `http://localhost:8000`.
 
-Running it on a server? Akamai refuses datacenter IPs for product details and stock, so set `BIG_W_PROXY` to a residential proxy (`http://user:pass@host:port`) — Australian works best. On your own machine you need nothing.
+Search, categories, brands, deals, reviews, stores and sellers work from any connection. Product details and stock sit behind Akamai's strictest wall: it refuses datacenter IPs, so on a server set `BIG_W_PROXY` to a residential proxy (`http://user:pass@host:port`) — Australian works best. Some hours Akamai refuses plain HTTP from every IP; when details or stock answer "blocked", retry a little later.
 
 ## 📚 Endpoints
 

@@ -16,8 +16,8 @@ from schema_fields import load_query
 from scraper_errors import BadRequest, Blocked, NotFound
 from big_w import api, schemas
 
-BLOCKED_HINT = ("Akamai refused this IP for product details / stock: set BIG_W_PROXY "
-                "to a residential proxy, Australian works best (see config.py).")
+BLOCKED_HINT = ("Akamai refused product details / stock: retry a little later, or on a server "
+                "set BIG_W_PROXY to a residential proxy, Australian works best (see config.py).")
 
 
 def json_response(data, status=200):

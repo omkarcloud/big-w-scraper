@@ -6,11 +6,11 @@ environment variable; the defaults work out of the box.
                  (default: none — direct). Search, categories, brands, deals,
                  reviews, stores and sellers come from Big W's open JSON
                  APIs, which answer any connection. Product details and
-                 store stock sit behind Akamai, which refuses datacenter IPs
-                 (and some residential ones): from a home connection they
-                 just work; on a server, or when they answer "blocked", set a
-                 residential proxy here (Australian works best). A rotating
-                 one is ideal — every retry then gets a fresh IP.
+                 store stock sit behind Akamai, which refuses datacenter IPs:
+                 on a server, set a residential proxy here (Australian works
+                 best; a rotating one is ideal — every retry then gets a
+                 fresh IP). Some hours Akamai refuses plain HTTP from every
+                 IP; when details or stock answer "blocked", retry later.
 
 Everything else below is a plain constant with a working default — edit it
 here if you need to.
