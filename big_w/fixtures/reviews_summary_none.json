@@ -1,0 +1,1 @@
+{"response":{"reviewSummary":{"numReviews":0,"primaryRating":{"average":null,"missing":0,"ratingRange":5,"distribution":[{"key":5,"count":0},{"key":4,"count":0},{"key":3,"count":0},{"key":2,"count":0},{"key":1,"count":0}]},"recommended":{"missing":0,"distribution":[{"key":true,"count":0},{"key":false,"count":0}]}},"questionSummary":{"numQuestions":0,"numAnswers":0}}}

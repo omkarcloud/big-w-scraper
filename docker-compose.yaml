@@ -1,0 +1,12 @@
+services:
+  big-w-scraper:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      # Product details and store stock sit behind Akamai, which refuses
+      # datacenter IPs. On a server, set a residential proxy (Australian
+      # works best).
+      # - BIG_W_PROXY=http://user:pass@host:port
