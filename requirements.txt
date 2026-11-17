@@ -5,3 +5,8 @@ cheroot
 curl_cffi>=0.16,<0.17
 marshmallow
 pytest
+patchright
+psutil
+browserforge
+requests
+pyvirtualdisplay; sys_platform == "linux"
