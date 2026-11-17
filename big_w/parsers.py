@@ -35,6 +35,8 @@ import re
 from datetime import datetime, timezone
 
 from big_w import refs
+from scraper_utils.values import number as _number, to_int as _int
+from scraper_utils.text import squashed_any as _str
 
 CURRENCY = "AUD"
 
@@ -68,13 +70,6 @@ def _get(obj, *path, default=None):
     return cur
 
 
-def _str(value):
-    if value is None:
-        return None
-    text = _WS_RE.sub(" ", str(value)).strip()
-    return text or None
-
-
 def _text(html):
     """Strip tags from a rich-text field, keeping list items on their own line."""
     if not html:
@@ -98,23 +93,6 @@ def _money(cents):
             return round(float(cents) / 100, 2)
         except (TypeError, ValueError):
             return None
-
-
-def _number(value):
-    if value is None or value == "" or value == "NA":
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return int(number) if number.is_integer() else number
-
-
-def _int(value):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _bool(value):

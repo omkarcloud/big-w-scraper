@@ -72,7 +72,7 @@ Failure taxonomy (scraper_errors, mapped to HTTP by route_glue):
   BigWBadRequest     upstream 400                                — never retried
   BigWNotFound       unknown product / category / store / seller — never retried
 """
-import json
+import fastjson
 import os
 import sys
 import threading
@@ -85,8 +85,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import browser_client
 import config
 import egress
+import identity_pool
 from big_w.refs import API, SITE
 from scraper_errors import BadRequest, Blocked, NotFound, UpstreamError
+from scraper_utils import sessions
 
 # Pinned, not "chrome": Akamai judges the TLS/HTTP2 fingerprint. From the pod
 # through one sticky AU residential exit, with never-requested product ids
@@ -154,26 +156,13 @@ _local = threading.local()
 
 
 def _session():
-    sess = getattr(_local, "session", None)
-    if sess is None:
-        from curl_cffi import requests as curl_requests
-        sess = curl_requests.Session(impersonate=IMPERSONATE)
-        proxy = config.big_w_proxy()
-        if proxy:
-            sess.proxies = {"http": proxy, "https": proxy}
-        _local.session = sess
-    return sess
+    return sessions.thread_session(_local, lambda: sessions.curl_session(
+        IMPERSONATE, proxy_fn=config.big_w_proxy))
 
 
 def _drop_session():
     """Close the thread's session so the retry rides a fresh exit."""
-    sess = getattr(_local, "session", None)
-    _local.session = None
-    if sess is not None:
-        try:
-            sess.close()
-        except Exception:
-            pass
+    sessions.drop(_local)
 
 
 def _retrying(fn):
@@ -285,7 +274,8 @@ def _mark_curl_refused():
 # must reach every call that should land on that browser
 # (browser_client.ExitPool), and a refusal inside the page rotates the exit.
 
-_EXITS = browser_client.ExitPool(PAGES_SITE, config.big_w_browser_proxy, size=lambda: config.BIG_W_BROWSER_SLOTS)
+_EXITS = browser_client.ExitPool(PAGES_SITE, config.big_w_browser_proxy, size=lambda: config.BIG_W_BROWSER_SLOTS,
+                                 burst=True)
 
 
 def _box_json(url, label, params=None):
@@ -317,7 +307,7 @@ def _box_json(url, label, params=None):
         if status != 200:
             raise BigWUpstreamError(f"HTTP {status} for {label} inside the box browser")
         try:
-            return json.loads(body)
+            return fastjson.loads(body)
         except ValueError:
             raise BigWUpstreamError(f"non-JSON response for {label} inside the box browser: {body[:120]}")
     raise last
@@ -476,36 +466,44 @@ def fetch_review_summary(article_id):
 
 
 # ---- sitemaps (Akamai Bot Manager: a browser-minted bm_s cookie) ----------------
-
-_sitemap_exit_lock = threading.Lock()
-_sitemap_exit = {"proxy": None}     # the sticky AU exit the bm_s identity is minted on
-
-
-def _sitemap_mint_exit(fresh=False):
-    """The exit the sitemap cookie is minted on: one sticky AU residential
-    exit (config.big_w_browser_proxy), replaced when a mint is forced. The
-    cookie is not bound to the exit IP (Mac-minted jar replayed from the pod
-    over datacenter US and residential AU, 2026-10-28), so the replay still
-    rides whatever exit the thread session has; the mint runs on an AU exit
-    so the box browser announces en-AU and an Australian clock to an
-    Australian storefront (owner decision 2026-10-29; before, it ran on the
-    box's own US IP with a US browser language)."""
-    with _sitemap_exit_lock:
-        if fresh or not _sitemap_exit["proxy"]:
-            _sitemap_exit["proxy"] = config.big_w_browser_proxy()
-        return _sitemap_exit["proxy"]
+# The exit the sitemap cookie is minted on: one sticky AU residential exit
+# (config.big_w_browser_proxy), rotated when an identity is retired or
+# replaced after a block. The cookie is not bound to the exit IP (Mac-minted
+# jar replayed from the pod over datacenter US and residential AU,
+# 2026-10-28), so the replay still rides whatever exit the thread session
+# has; the mint runs on an AU exit so the box browser announces en-AU and an
+# Australian clock to an Australian storefront (owner decision 2026-10-29;
+# before, it ran on the box's own US IP with a US browser language).
+_SITEMAP_EXITS = browser_client.ExitPool(BOX_SITE, config.big_w_browser_proxy, size=1)
 
 
-def _sitemap_identity(force=False):
-    """The cached bm_s identity minted on the browser box (recipes/big_w.py)
-    through _sitemap_mint_exit."""
+def _mint_sitemap_identity(key, hint):
+    """The pool's mint function: the bm_s identity minted on the browser box
+    (recipes/big_w.py) through `hint`, the pool's sticky exit. Box errors
+    are mapped here; the pool's own MintBudgetExceeded at the call site."""
     try:
-        return browser_client.identity(BOX_SITE, proxy=_sitemap_mint_exit(fresh=force), force=force)
+        ident = browser_client.mint(BOX_SITE, proxy=hint)
     except browser_client.BoxUnavailable as e:
         raise BigWUpstreamError(f"browser box unavailable for the sitemap cookie mint: {e}")
     except browser_client.BoxRefused as e:
         raise BigWBlocked(f"the sitemap cookie mint did not pass on the browser box: {e}")
-    except browser_client.RemintBudgetExceeded as e:
+    return identity_pool.Identity(ident, exit=hint, expires_at=ident.get("expires_at"))
+
+
+# One process-wide identity (shared mode): every thread replays the same jar
+# until the recipe's expires_at, and a block wave re-mints ONCE (before
+# 2026-11-07 every failing request in the wave forced its own mint).
+_sitemap_identities = identity_pool.Pool(BOX_SITE, _mint_sitemap_identity, exit_pool=_SITEMAP_EXITS,
+                                         mints_per_minute=5)
+
+
+def _sitemap_identity(replace=None):
+    """The pooled bm_s identity (its `value` is the box's identity dict);
+    `replace` = the identity a blocked round used, re-minted only if it is
+    still the current one (a peer's fresh mint is taken instead)."""
+    try:
+        return _sitemap_identities.get(replace=replace)
+    except identity_pool.MintBudgetExceeded as e:
         raise BigWBlocked(str(e))
 
 
@@ -519,11 +517,17 @@ def _fetch_xml(url, label):
     the budget is small on purpose (each mint is a box browser launch and
     the box's remint budget is per minute)."""
     last = None
+    prev = None
     for round_ in range(SITEMAP_IDENTITIES):
-        ident = _sitemap_identity(force=round_ > 0)       # mint errors surface at once
-        # the minting browser's UA / client hints / Accept-Language
-        headers = browser_client.headers_for(ident, **XML_HEADERS)
-        headers["cookie"] = browser_client.cookie_header(ident)
+        # round 0: the pooled identity; round 1: a fresh one in its place
+        # (one re-mint per block wave: a peer's replacement is reused).
+        # Mint errors surface at once.
+        prev = ident = _sitemap_identity(replace=prev if round_ else None)
+        # the minting browser's UA / client hints / Accept-Language (only the
+        # accept comes from XML_HEADERS: its accept-language would override
+        # the browser's own)
+        headers = browser_client.headers_for(ident.value, accept=XML_HEADERS["accept"])
+        headers["cookie"] = browser_client.cookie_header(ident.value)
         for _ in range(SITEMAP_EXITS_PER_IDENTITY):
             try:
                 try:
@@ -537,7 +541,9 @@ def _fetch_xml(url, label):
             except BigWUpstreamError as e:      # BigWBlocked included
                 last = e
                 _drop_session()
-        browser_client.invalidate(BOX_SITE, proxy=_sitemap_exit["proxy"])
+    # the last identity failed on every exit too: retire it (and its mint
+    # exit) so the next call mints afresh; a no-op if a peer already did
+    _sitemap_identities.retire(prev)
     raise last
 
 

@@ -18,6 +18,7 @@ from marshmallow import ValidationError, fields, validate, validates_schema
 from big_w import refs
 from schema_fields import (BaseSchema, ChoiceField, CommaListField, Flag, PageField,
                            PageSizeField, Price, QueryField, RefField, StrippedString)
+from scraper_utils.schema import max_length as _max_length
 
 __all__ = ["ProductRefField", "CategoryRefField", "StoreRefField", "BrandRefField",
            "SellerRefField", "StateField", "ProductsSearchSchema", "ProductsDetailsSchema",
@@ -31,15 +32,6 @@ DEFAULT_LIMIT = 48     # the storefront's page size
 MAX_LIMIT = 100        # perPage above 100 is clamped by the index
 MAX_REVIEW_LIMIT = 100  # Bazaarvoice caps Limit at 100
 SITEMAP_PRODUCT_PAGES = 18  # product-en-aud-0 .. -17 (2026-10-28); re-read from the index at call time
-
-
-def _max_length(n):
-    """validate.Length(max=n) that tolerates the None StrippedString returns
-    for an empty value (marshmallow runs validators on it; len(None) is a 500)."""
-    def check(value):
-        if value is not None and len(value) > n:
-            raise ValidationError(f"Longer than maximum length {n}.")
-    return check
 
 
 class ProductRefField(RefField):

@@ -34,7 +34,7 @@ class RemintBudgetExceeded(Exception):
 class ExitPool:
     """The hosted client's pool of browser exits; here it only refuses."""
 
-    def __init__(self, site, proxy_fn=None, size=None):
+    def __init__(self, site, proxy_fn=None, size=None, **kwargs):
         self.site = site
 
     def fetch_any(self, site, **request):
